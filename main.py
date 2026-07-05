@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import sqlite3
 import requests
+import textwrap
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 
@@ -15,6 +16,7 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS users_scores (user_id INTEGER PRIMARY KEY, score INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS user_stats (user_id INTEGER PRIMARY KEY, likes INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS subscriptions (user_id INTEGER PRIMARY KEY)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS referrals (user_id INTEGER PRIMARY KEY, referrer_id INTEGER)''')
     conn.commit()
     conn.close()
 
@@ -25,7 +27,8 @@ def create_meme_image(text, filename="meme_temp.png"):
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([40, 40, 760, 560], radius=30, fill=(40, 40, 60), outline=(100, 100, 255), width=3)
     font = ImageFont.truetype("arial.ttf", 28)
-    d.text((80, 100), text, fill=(255, 255, 255), font=font)
+    wrapped_text = textwrap.fill(text, width=35) 
+    d.text((80, 100), wrapped_text, fill=(255, 255, 255), font=font)
     img.save(filename)
     return filename
 
@@ -38,6 +41,16 @@ def get_real_meme():
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    args = message.text.split()
+    if len(args) > 1:
+        referrer_id = args[1]
+        conn = sqlite3.connect(DB_FILE)
+        if not conn.execute('SELECT 1 FROM users_scores WHERE user_id = ?', (message.chat.id,)).fetchone():
+            conn.execute('INSERT OR IGNORE INTO users_scores (user_id, score) VALUES (?, 10)', (referrer_id,))
+            conn.execute('UPDATE users_scores SET score = score + 10 WHERE user_id = ?', (referrer_id,))
+            conn.commit()
+        conn.close()
+
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🎭 Хочу мем!", "📩 Предложить мем", "📊 Топ", "👤 Профиль", "🎁 Бонус", "⏰ Напоминалка")
     bot.send_message(message.chat.id, "Привет! Ты в Мем-Империи.", reply_markup=markup)
@@ -68,7 +81,8 @@ def handle_text(message):
         s = conn.execute('SELECT score FROM users_scores WHERE user_id = ?', (message.chat.id,)).fetchone()
         l = conn.execute('SELECT likes FROM user_stats WHERE user_id = ?', (message.chat.id,)).fetchone()
         conn.close()
-        msg = f"👤 Профиль:\n💰 Очков: {s[0] if s else 0}\n👍 Лайков: {l[0] if l else 0}"
+        ref_link = f"https://t.me/{(bot.get_me().username)}?start={message.chat.id}"
+        msg = f"👤 Профиль:\n💰 Очков: {s[0] if s else 0}\n👍 Лайков: {l[0] if l else 0}\n\n🔗 Реф. ссылка: {ref_link}"
         bot.send_message(message.chat.id, msg)
 
     elif message.text == "🎁 Бонус":
@@ -78,6 +92,22 @@ def handle_text(message):
         conn.commit()
         conn.close()
         bot.send_message(message.chat.id, "🎁 +10 очков за ежедневный бонус!")
+
+    elif message.text == "⏰ Напоминалка":
+        conn = sqlite3.connect(DB_FILE)
+        if conn.execute('SELECT 1 FROM subscriptions WHERE user_id = ?', (message.chat.id,)).fetchone():
+            conn.execute('DELETE FROM subscriptions WHERE user_id = ?', (message.chat.id,))
+            bot.send_message(message.chat.id, "🔕 Уведомления выключены.")
+        else:
+            conn.execute('INSERT INTO subscriptions VALUES (?)', (message.chat.id,))
+            bot.send_message(message.chat.id, "🔔 Напоминалка включена! (Бот будет писать раз в сутки)")
+        conn.commit()
+        conn.close()
+
+def process_meme_suggestion(message):
+    ADMIN_ID = 8642759195
+    bot.send_message(message.chat.id, "Спасибо! Мем отправлен на проверку.")
+    bot.send_message(ADMIN_ID, f"📩 Мем от @{message.from_user.username}:\n{message.text}")
 
 @bot.callback_query_handler(func=lambda call: call.data == "like")
 def handle_like(call):
@@ -89,11 +119,6 @@ def handle_like(call):
     conn.commit()
     conn.close()
     bot.answer_callback_query(call.id, "Лайк поставлен! +5 очков.")
-
-def process_meme_suggestion(message):
-    ADMIN_ID = 8642759195
-    bot.send_message(message.chat.id, "Спасибо! Мем отправлен на проверку.")
-    bot.send_message(ADMIN_ID, f"📩 Мем от @{message.from_user.username}:\n{message.text}")
 
 if __name__ == '__main__':
     bot.infinity_polling()
