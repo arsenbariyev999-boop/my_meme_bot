@@ -32,8 +32,10 @@ def create_meme_image(text, filename="meme_temp.png"):
     img = Image.new('RGB', (800, 600), color=(20, 20, 30))
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([40, 40, 760, 560], radius=30, fill=(40, 40, 60), outline=(100, 100, 255), width=3)
-    try: font = ImageFont.truetype("arial.ttf", 28)
-    except: font = ImageFont.load_default()
+    
+    # ИСПРАВЛЕНО: принудительная загрузка твоего шрифта
+    font = ImageFont.truetype("arial.ttf", 28)
+    
     d.text((80, 100), textwrap.fill(text, width=40), fill=(255, 255, 255), font=font)
     img.save(filename)
     return filename
