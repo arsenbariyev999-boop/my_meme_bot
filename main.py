@@ -104,7 +104,7 @@ def handle_text(message):
 
 # Функция обработки предложения (приходит сразу в личку тебе)
 def process_meme_suggestion(message):
-    ADMIN_ID = 8467789248
+    ADMIN_ID = 8642759195
     bot.send_message(message.chat.id, "Спасибо! Мем отправлен на проверку.")
     bot.send_message(ADMIN_ID, f"📩 Мем от @{message.from_user.username}:\n{message.text}")
 
