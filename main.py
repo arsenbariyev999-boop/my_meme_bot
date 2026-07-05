@@ -33,7 +33,6 @@ def create_meme_image(text, filename="meme_temp.png"):
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([40, 40, 760, 560], radius=30, fill=(40, 40, 60), outline=(100, 100, 255), width=3)
     
-    # ИСПРАВЛЕНО: принудительная загрузка твоего шрифта
     font = ImageFont.truetype("arial.ttf", 28)
     
     d.text((80, 100), textwrap.fill(text, width=40), fill=(255, 255, 255), font=font)
@@ -50,21 +49,8 @@ def get_real_meme():
 # --- Обработка ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    # Реферальная логика
-    args = message.text.split()
-    if len(args) > 1:
-        referrer_id = args[1]
-        if str(message.chat.id) != referrer_id:
-            conn = sqlite3.connect(DB_FILE)
-            if not conn.execute('SELECT 1 FROM referrals WHERE user_id = ?', (message.chat.id,)).fetchone():
-                conn.execute('INSERT INTO referrals (user_id, referrer_id) VALUES (?, ?)', (message.chat.id, referrer_id))
-                conn.execute('UPDATE users_scores SET score = score + 20 WHERE user_id = ?', (referrer_id,))
-                conn.commit()
-                bot.send_message(referrer_id, "🎉 По твоей ссылке зашел новый друг! +20 очков!")
-            conn.close()
-
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("🎭 Хочу мем!", "📊 Топ", "👤 Профиль", "🎁 Бонус", "⏰ Напоминалка")
+    markup.add("🎭 Хочу мем!", "📩 Предложить мем", "📊 Топ", "👤 Профиль", "🎁 Бонус", "⏰ Напоминалка")
     bot.send_message(message.chat.id, "Привет! Ты в Мем-Империи.", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: True)
@@ -76,6 +62,10 @@ def handle_text(message):
         markup.add(types.InlineKeyboardButton("👍 Лайк", callback_data="like"))
         with open(img_path, 'rb') as photo:
             bot.send_photo(message.chat.id, photo, reply_markup=markup)
+            
+    elif message.text == "📩 Предложить мем":
+        msg = bot.send_message(message.chat.id, "Пришли мне свой мем!")
+        bot.register_next_step_handler(msg, process_meme_suggestion)
             
     elif message.text == "📊 Топ":
         conn = sqlite3.connect(DB_FILE)
@@ -89,7 +79,6 @@ def handle_text(message):
         s = conn.execute('SELECT score FROM users_scores WHERE user_id = ?', (message.chat.id,)).fetchone()
         l = conn.execute('SELECT likes FROM user_stats WHERE user_id = ?', (message.chat.id,)).fetchone()
         conn.close()
-        # Генерируем реф ссылку
         ref_link = f"https://t.me/{(bot.get_me().username)}?start={message.chat.id}"
         msg = f"👤 Профиль:\n💰 Очков: {s[0] if s else 0}\n👍 Лайков: {l[0] if l else 0}\n\n🔗 Реф. ссылка:\n{ref_link}"
         bot.send_message(message.chat.id, msg)
@@ -113,11 +102,17 @@ def handle_text(message):
         conn.commit()
         conn.close()
 
+# Функция обработки предложения (приходит сразу в личку тебе)
+def process_meme_suggestion(message):
+    ADMIN_ID = 8467789248
+    bot.send_message(message.chat.id, "Спасибо! Мем отправлен на проверку.")
+    bot.send_message(ADMIN_ID, f"📩 Мем от @{message.from_user.username}:\n{message.text}")
+
 @bot.callback_query_handler(func=lambda call: call.data == "like")
 def handle_like(call):
     conn = sqlite3.connect(DB_FILE)
     conn.execute('INSERT OR IGNORE INTO user_stats (user_id) VALUES (?)', (call.message.chat.id,))
-    conn.execute('UPDATE user_stats SET likes = likes + 1 WHERE user_id = ?', (call.message.chat.id,))
+    conn.execute('UPDATE user_stats SET likes = likes + 1 WHERE call.message.chat.id = ?', (call.message.chat.id,))
     conn.execute('INSERT OR IGNORE INTO users_scores (user_id) VALUES (?)', (call.message.chat.id,))
     conn.execute('UPDATE users_scores SET score = score + 5 WHERE user_id = ?', (call.message.chat.id,))
     conn.commit()
